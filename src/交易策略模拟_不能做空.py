@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Tue Aug 29 11:27:56 2017
+
+@author: 53771
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Fri Aug 25 15:05:53 2017
 
 @author: 53771
@@ -24,11 +31,12 @@ for index,row in sz50s.iterrows():
     Close[row['code']]=data['close']
 
 
-formPeriod='2015-01-01:2016-01-01'
-tradePeriod='2016-01-01:2017-01-01'
+formPeriod='2017-01-01:2017-06-01'
+#tradePeriod='2017-01-01:2017-06-01'
+tradePeriod='2017-06-01:2017-08-25'
 
-priceA=Close['601288']
-priceB=Close['601398']
+priceA=Close['601186']
+priceB=Close['601211']
 
 priceAf=priceA[formPeriod.split(':')[0]:formPeriod.split(':')[1]]
 priceBf=priceB[formPeriod.split(':')[0]:formPeriod.split(':')[1]]
@@ -56,95 +64,94 @@ plt.axhline(y=mu-2.5*sd,color='red',ls="-.",lw=3)
 level=(float('-inf'),mu-2.5*sd,mu-1.5*sd,mu-0.2*sd,mu+0.2*sd,mu+1.5*sd,mu+2.5*sd,float('inf'))
 prcLevel=pd.cut(CoSpreadT,level,labels=False)-3
 
-#prcLevel.plot()
-
 
 def TradeSig(prcLevel):
     n=len(prcLevel)
     signal=np.zeros(n)
     for i in range(1,n):
         if prcLevel[i-1]==1 and prcLevel[i]==2:#上穿建
-            signal[i]=1
-        elif prcLevel[i-1]==-1 and prcLevel[i]==-2:#下穿建
-            signal[i]=-1
-        elif prcLevel[i-1]==1 and prcLevel[i]<1:#平仓线
             signal[i]=2
-        elif prcLevel[i-1]==-1 and prcLevel[i]>-1:#下平仓
+        elif prcLevel[i-1]==-1 and prcLevel[i]==-2:#下穿建
             signal[i]=-2
-        elif prcLevel[i-1]<=2 and prcLevel[i]>2:#关系脱离平仓
+        elif prcLevel[i-1]>=1 and prcLevel[i]==0:#平仓线
+            signal[i]=1
+        elif prcLevel[i-1]<=-1 and prcLevel[i]==0:#下平仓
+            signal[i]=-1
+        elif prcLevel[i-1]==2 and prcLevel[i]==3:#关系脱离平仓
             signal[i]=3
-        elif prcLevel[i-1]>=-2 and prcLevel[i]<-2:#关系脱离平仓
+        elif prcLevel[i-1]==-2 and prcLevel[i]==-3:#关系脱离平仓
             signal[i]=-3
     return(signal)
-
-
-signal=TradeSig(prcLevel) 
-ns=len(signal)
+    
+signal=TradeSig(prcLevel)
 position=[signal[0]]
+ns=len(signal)
+
 
 
 for i in range(1,ns):
     position.append(position[-1])
-    if signal[i]==1:
-        position[i]=1
-    elif signal[i]==-1:
-        position[i]=-1
-    elif signal[i]==2 and position[i-1]==1:
-        position[i]=0
-    elif signal[i]==-2 and position[i-1]==-1:
-        position[i]=0
-    elif signal[i]==3:
-        position[i]=0
-    elif signal[i]==-3:
-        position[i]=0
+    if signal[i]!=0:
+        position[i]=signal[i]
 
 position=pd.Series(position,index=CoSpreadT.index)
 
-
-#A股无法做空，所以只能在价值高估的时候卖出，价值低估时买入，这要求操作的股票要在恒定价值内波动       
-def TradeSim(priceX,priceY,position):
+'''
+1.按均衡方式持股 0.5 0.5的比例方式
+2然后在价差过大时进行仓位调整，处理掉估值较高的股票,购入股价较低的股票
+3.在价位回复正常后，重新按仓位持股 
+'''
+def Trade(priceX,priceY,position):
     n=len(position)
+    #money=2000
+    cash=[2000]
+    beta=0.5
     shareY=pd.Series(np.zeros(n),index=position.index)
     shareX=pd.Series(np.zeros(n),index=position.index)
-    cash=[2000]
+    shareX[0]=0
+    shareY[0]=0
     for i in range(1,n):
         shareX[i]=(shareX[i-1])
         shareY[i]=(shareY[i-1])
         cash.append(cash[i-1])
-        if position[i-1]==0 and position[i]==1:#卖出X,买入Y
-            shareX[i]=0
-            shareY[i]=(cash[i-1]+((shareX[i-1]-shareX[i])*priceX[i]))/priceY[i]
-            cash[i]=cash[i-1]-(shareY[i]*priceY[i]+shareX[i]*priceX[i])
-        elif position[i-1]==0 and position[i]==-1:#买入X,卖出Y
+        if(position[i-1]<2 and position[i]==2):#卖出Y股,钱全部买X股
             shareY[i]=0
-            shareX[i]=(cash[i-1]+((shareY[i-1]-shareY[i])*priceY[i]))/priceX[i]
-            cash[i]=cash[i-1]-(shareY[i]*priceY[i]+shareX[i]*priceX[i])
-        elif position[i-1]==1 and position[i]==0:
+            shareX[i]=(cash[i-1]+shareY[i-1]*priceY[i]+shareX[i-1]*priceX[i])/priceX[i]
+            cash[i]=0
+        elif(position[i-1]>-2 and position[i]==-2):#卖出X，钱全部买Y股
+            shareX[i]=0
+            shareY[i]=(cash[i-1]+shareX[i-1]*priceX[i]+shareY[i-1]*priceY[i])/priceY[i]
+            cash[i]=0
+        elif(abs(position[i-1])!=1 and position[i-1]!=0 and abs(position[i])==1):#重新调整持股比例
+            now_money=cash[i-1]+shareX[i-1]*priceX[i]+shareY[i-1]*priceY[i]
+            shareX[i]=(now_money*beta)/priceX[i];
+            shareY[i]=(now_money*(1-beta))/priceY[i];
+            cash[i]=0
+        '''    
+        elif(abs(position[i])==3):
             shareX[i]=0
             shareY[i]=0
-            cash[i]=cash[i-1]+(shareY[i-1]*priceY[i]+shareX[i-1]*priceX[i])
-        elif position[i-1]==-1 and position[i]==0:
-            shareX[i]=0
-            shareY[i]=0
-            cash[i]=cash[i-1]+(shareY[i-1]*priceY[i]+shareX[i-1]*priceX[i])
+            cash[i]=cash[i-1]+shareX[i-1]*priceX[i]+shareY[i-1]*priceY[i]
+            '''
     cash=pd.Series(cash,index=position.index)
     asset=cash+shareY*priceY+shareX*priceX
     account=pd.DataFrame({'Position':position,'ShareY':shareY,'ShareX':shareX,
                           'Cash':cash,'Asset':asset})
     return(account)
+            
+account=Trade(priceAt,priceBt,position)
+#account.iloc[:,[0,1,3,4]].plot(style=['--','-',':'])   
 
+account['priceX']=(2000/priceAt[0])*priceAt
+account['priceY']=(2000/priceBt[0])*priceBt
 
-#根据A股不能做空的方式，重新拟定交易策略
-'''
-1.按均衡方式持股 0.5 0.5的比例方式
-2然后在价差出现较大变化时进行仓位调整，处理掉估值较高的股票
-3.在价位回复正常后，重新按仓位持 
-'''
+account.loc[:,['Asset','priceX','priceY','ShareX','ShareY']].plot()
+      
+            
+            
+            
+            
+            
 
-
-account=TradeSim(priceAt,priceBt,position)
-account.iloc[:,[0,1,3,4]].plot(style=['--','-',':'])
-
-    
-           
-   
+            
+        

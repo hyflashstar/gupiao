@@ -35,8 +35,8 @@ formPeriod='2017-01-01:2017-06-01'
 #tradePeriod='2017-01-01:2017-06-01'
 tradePeriod='2017-06-01:2017-08-25'
 
-priceA=Close['601186']
-priceB=Close['601211']
+priceA=Close['600016']
+priceB=Close['601198']
 
 priceAf=priceA[formPeriod.split(':')[0]:formPeriod.split(':')[1]]
 priceBf=priceB[formPeriod.split(':')[0]:formPeriod.split(':')[1]]
@@ -61,7 +61,7 @@ plt.axhline(y=mu-1.5*sd,color='green',ls='--',lw=2.5)
 plt.axhline(y=mu+2.5*sd,color='red',ls="-.",lw=3)
 plt.axhline(y=mu-2.5*sd,color='red',ls="-.",lw=3)
 
-level=(float('-inf'),mu-2.5*sd,mu-1.5*sd,mu-0.2*sd,mu+0.2*sd,mu+1.5*sd,mu+2.5*sd,float('inf'))
+level=(float('-inf'),mu-3.0*sd,mu-1.5*sd,mu-0.2*sd,mu+0.2*sd,mu+1.5*sd,mu+3.0*sd,float('inf'))
 prcLevel=pd.cut(CoSpreadT,level,labels=False)-3
 
 
@@ -77,9 +77,9 @@ def TradeSig(prcLevel):
             signal[i]=1
         elif prcLevel[i-1]<=-1 and prcLevel[i]==0:#下平仓
             signal[i]=-1
-        elif prcLevel[i-1]==2 and prcLevel[i]==3:#关系脱离平仓
+        elif prcLevel[i-1]<=2 and prcLevel[i]==3:#关系脱离平仓
             signal[i]=3
-        elif prcLevel[i-1]==-2 and prcLevel[i]==-3:#关系脱离平仓
+        elif prcLevel[i-1]>=-2 and prcLevel[i]==-3:#关系脱离平仓
             signal[i]=-3
     return(signal)
     
@@ -127,12 +127,12 @@ def Trade(priceX,priceY,position):
             shareX[i]=(now_money*beta)/priceX[i];
             shareY[i]=(now_money*(1-beta))/priceY[i];
             cash[i]=0
-        '''    
+  
         elif(abs(position[i])==3):
             shareX[i]=0
             shareY[i]=0
             cash[i]=cash[i-1]+shareX[i-1]*priceX[i]+shareY[i-1]*priceY[i]
-            '''
+
     cash=pd.Series(cash,index=position.index)
     asset=cash+shareY*priceY+shareX*priceX
     account=pd.DataFrame({'Position':position,'ShareY':shareY,'ShareX':shareX,

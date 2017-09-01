@@ -24,7 +24,7 @@ endDate=tradePeriod.split(':')[1]
 pt=pairTrading.PairTrading()
 
 
-
+#相关性股票选择
 def pairingStock(Close,firstPeriod,secondPeriod):
     df=pd.DataFrame(columns=['code','code1', 'alpha','beta','mu','sd'])
     CloseF=Close[firstPeriod.split(':')[0]:firstPeriod.split(':')[1]]
@@ -45,11 +45,14 @@ def pairingStock(Close,firstPeriod,secondPeriod):
     select=df[df['alpha']>0]
     
     #取得行业相关性，同行业认同
-    
-    
     return select
     
-
+industry=ls.read_industry()
+industry1=industry.copy()
+industry1['code1']=industry1['code']
+industry1['name1']=industry1['name']
+industry1['c_name1']=industry1['c_name']
+industry1=industry1.loc[:,['code1','name1','c_name1']]
 
 #获取交易记录,才收盘价代表当日价格（现在用上证50的来做试验，降低数量级）
 sz50s=ts.get_sz50s()
@@ -71,14 +74,30 @@ for index,row in trade.iterrows():
     e=index.strftime('%Y-%m-%d')
     firstPeriod=s+":"+e
     secondPeriod='2016-01-01:2017-01-01' 
+    
+    
     #print(firstPeriod)
     select=pairingStock(Close,firstPeriod,secondPeriod).sort_values('sd')
+    select=pd.merge(select,industry,how='left',on=['code'])
+    select=pd.merge(select,industry1,how='left',on=['code1'])
     
-    
-    
-
+    #先只取同行业的来算
+    select=select[select['c_name']==select['c_name1']]
     
     #选出当前时间点符合交易规则的股票
+    for i,r in select.iterrows():
+        #print (r['code'])
+        priceAt=(Close.loc[index,:][r['code']])
+        priceBt=(Close.loc[index,:][r['code1']])
+         
+        CoSpreadT=np.log(priceBt)-r['beta']*np.log(priceAt)-r['alpha']
+        mu=r['mu']
+        sd=r['sd']
+        
+        level=(float('-inf'),mu-3.0*sd,mu-1.5*sd,mu-0.2*sd,mu+0.2*sd,mu+1.5*sd,mu+3.0*sd,float('inf'))
+        prcLevel=pd.cut(CoSpreadT,level,labels=False)-3
+        print(prcLevel)
+        #np.log(priceBt)-beta*np.log(priceAt)-alpha
     
     
     #模拟交易

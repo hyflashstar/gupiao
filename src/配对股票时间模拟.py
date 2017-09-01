@@ -1,13 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Aug 29 11:27:56 2017
-
-@author: 53771
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Aug 25 15:05:53 2017
+Created on Thu Aug 31 18:10:45 2017
 
 @author: 53771
 """
@@ -18,10 +11,18 @@ import tushare as ts
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import datetime as dt
 
+#账户初始资金
+cash=[10000]
+tradePeriod="2016-01-01:2017-08-01"
+startDate=tradePeriod.split(':')[0]
+endDate=tradePeriod.split(':')[1]
+
+#加入
+pt=pairTrading.PairTrading()
 
 sz50s=ts.get_sz50s()
-#sz50s=sz50s[0:2]
 
 Close=pd.DataFrame()
 #Close.index=c000001.index
@@ -30,46 +31,46 @@ for index,row in sz50s.iterrows():
     #Close.index=data.index
     Close[row['code']]=data['close']
 
-#Close=Close.dropna(axis=0)
+Close=Close.loc[:,['600958','601788']]
+Close=Close.dropna(axis=0)    
+trade=Close[startDate:endDate]
 
-#formPeriod='2017-01-03:2017-08-25'
-formPeriod='2016-06-01:2017-01-01'
-#tradePeriod='2016-06-01:2017-01-01'
-tradePeriod='2017-01-03:2017-08-25'
+df=pd.DataFrame(columns=['date','alpha','beta','p-value','mu','sd','CoSpreadT','prcLevel','xz'])
 
-Close=Close.loc[:,['601288','601398']]
-Close=Close.dropna(axis=0)
+alpha,beta,p,mu,sd,CoSpreadT,prcLevel=0.0,0.0,0.0,0.0,0.0,0.0,0.0
 
-priceA=Close.iloc[:,0]
-priceB=Close.iloc[:,1]
-
-priceAf=priceA[formPeriod.split(':')[0]:formPeriod.split(':')[1]]
-priceBf=priceB[formPeriod.split(':')[0]:formPeriod.split(':')[1]]
-priceAt=priceA[tradePeriod.split(':')[0]:tradePeriod.split(':')[1]]
-priceBt=priceB[tradePeriod.split(':')[0]:tradePeriod.split(':')[1]]
-
-pt=pairTrading.PairTrading()
-alpha,beta,p=pt.Cointegration(priceAf,priceBf)
-spreadf=pt.CointegrationSpread(priceA,priceB,formPeriod,formPeriod)
-mu=np.mean(spreadf)
-sd=np.std(spreadf)
-
-CoSpreadT=np.log(priceBt)-beta*np.log(priceAt)-alpha
-
-CoSpreadT.plot()
-plt.title('交易期价差序列（协整配对）')
-plt.axhline(y=mu,color='black')
-plt.axhline(y=mu+0.2*sd,color='blue',ls='-',lw=2)
-plt.axhline(y=mu-0.2*sd,color='blue',ls='-',lw=2)
-plt.axhline(y=mu+1.5*sd,color='green',ls='--',lw=2.5)
-plt.axhline(y=mu-1.5*sd,color='green',ls='--',lw=2.5)
-plt.axhline(y=mu+2.5*sd,color='red',ls="-.",lw=3)
-plt.axhline(y=mu-2.5*sd,color='red',ls="-.",lw=3)
-
-level=(float('-inf'),mu-2.5*sd,mu-1.5*sd,mu-0.2*sd,mu+0.2*sd,mu+1.5*sd,mu+2.5*sd,float('inf'))
-prcLevel=pd.cut(CoSpreadT,level,labels=False)-3
-
-
+for index,row in trade.iterrows(): 
+    #计算前6个月符合配对交易的规则的
+    delta = dt.timedelta(days=365)
+    six_months_ago = index - delta
+    s=six_months_ago.strftime('%Y-%m-%d')
+    e=index.strftime('%Y-%m-%d')
+    firstPeriod=s+":"+e
+    
+    CloseF=Close[firstPeriod.split(':')[0]:firstPeriod.split(':')[1]]
+    dis=(pt.Cointegration(CloseF.iloc[:,0],CloseF.iloc[:,1]))
+    
+    if(dis):
+        alpha=dis[0]
+        beta=dis[1]
+        p=dis[2]
+        priceAt=(Close.loc[index,:][0])
+        priceBt=(Close.loc[index,:][1])
+        CoSpreadT=np.log(priceBt)-beta*np.log(priceAt)-alpha
+        spreadf=pt.CointegrationSpread(Close.iloc[:,0],Close.iloc[:,1],firstPeriod,firstPeriod)
+        mu=np.mean(spreadf)
+        sd=np.std(spreadf)
+        level=(float('-inf'),mu-2.5*sd,mu-1.5*sd,mu-0.2*sd,mu+0.2*sd,mu+1.5*sd,mu+2.5*sd,float('inf'))
+        prcLevel=pd.cut(CoSpreadT,level,labels=False)-3
+        
+        df.loc[df.shape[0]+1]={'date':index,
+                          'alpha':alpha,'beta':beta,'p-value':p,'mu':mu,'sd':sd,
+                          'CoSpreadT':CoSpreadT,'prcLevel':prcLevel,'xz':1}
+    else:
+        df.loc[df.shape[0]+1]={'date':index,
+                  'alpha':alpha,'beta':beta,'p-value':p,'mu':mu,'sd':sd,
+                  'CoSpreadT':CoSpreadT,'prcLevel':prcLevel,'xz':0}
+        
 def TradeSig(prcLevel):
     n=len(prcLevel)
     signal=np.zeros(n)
@@ -87,7 +88,10 @@ def TradeSig(prcLevel):
         elif prcLevel[i-1]>=-2 and prcLevel[i]==-3:#关系脱离平仓
             signal[i]=-3
     return(signal)
-    
+
+
+prcLevel=list(df['prcLevel'])
+ 
 signal=TradeSig(prcLevel)
 position=[signal[0]]
 ns=len(signal)
@@ -99,7 +103,7 @@ for i in range(1,ns):
     if signal[i]!=0:
         position[i]=signal[i]
 
-position=pd.Series(position,index=CoSpreadT.index)
+position=pd.Series(position,index=trade.index)
 
 '''
 1.按均衡方式持股 0.5 0.5的比例方式
@@ -132,10 +136,12 @@ def Trade(priceX,priceY,position):
             shareX[i]=(now_money*beta)/priceX[i];
             shareY[i]=(now_money*(1-beta))/priceY[i];
             cash[i]=0
+        '''
         elif(abs(position[i])==3):
             shareX[i]=0
             shareY[i]=0
-            cash[i]=cash[i-1]+shareX[i-1]*priceX[i]+shareY[i-1]*priceY[i]  
+            cash[i]=cash[i-1]+shareX[i-1]*priceX[i]+shareY[i-1]*priceY[i]
+            '''
 
     cash=pd.Series(cash,index=position.index)
     asset=cash+shareY*priceY+shareX*priceX
@@ -143,20 +149,11 @@ def Trade(priceX,priceY,position):
                           'Cash':cash,'Asset':asset})
     return(account)
             
-account=Trade(priceAt,priceBt,position)
+account=Trade(trade.iloc[:,0],trade.iloc[:,1],position)
 #account.iloc[:,[0,1,3,4]].plot(style=['--','-',':'])   
 
-account['priceX']=(2000/priceAt[0])*priceAt
-account['priceY']=(2000/priceBt[0])*priceBt
+account['priceX']=(2000/trade.iloc[0,0])*trade.iloc[:,0]
+account['priceY']=(2000/trade.iloc[0,1])*trade.iloc[:,1]
 
 account.loc[:,['Asset','priceX','priceY','ShareX','ShareY']].plot()
-#plt.axhline(y=2000,color='red')
-      
-            
-            
-            
-            
-            
-
-            
-        
+    

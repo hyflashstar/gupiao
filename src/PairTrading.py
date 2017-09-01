@@ -54,7 +54,7 @@ class PairTrading:
                   Intercept : %f
                   Beta: %f
                   ''' % (adfSpread.pvalue,results.params[0],results.params[1])) 
-            return(results.params[0],results.params[1])
+            return(results.params[0],results.params[1],adfSpread.pvalue)
     def CointegrationSpread(self,priceX,priceY,formPeriod,tradePeriod):
         if priceX is None or priceY is None:
             print('缺少价格序列')
